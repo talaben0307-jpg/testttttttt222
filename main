@@ -1,0 +1,211 @@
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local VirtualUser = game:GetService("VirtualUser")
+local Workspace = game:GetService("Workspace")
+
+local LocalPlayer = Players.LocalPlayer
+
+getgenv().AutoFarm = false
+getgenv().FarmDistance = 20
+getgenv().BringDistance = 250
+getgenv().HitboxSize = 55
+getgenv().WeaponType = "Melee"
+
+local ScreenGui = Instance.new("ScreenGui")
+local ToggleBtn = Instance.new("TextButton")
+local UICorner = Instance.new("UICorner")
+
+ScreenGui.Name = "ZenxFarmUI"
+ScreenGui.Parent = game:GetService("CoreGui")
+
+ToggleBtn.Parent = ScreenGui
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 35)
+ToggleBtn.Position = UDim2.new(0.05, 0, 0.2, 0)
+ToggleBtn.Size = UDim2.new(0, 150, 0, 45)
+ToggleBtn.Font = Enum.Font.GothamBold
+ToggleBtn.Text = "Auto Farm: OFF"
+ToggleBtn.TextColor3 = Color3.fromRGB(0, 255, 255)
+ToggleBtn.TextSize = 14
+ToggleBtn.Draggable = true
+ToggleBtn.Active = true
+
+UICorner.CornerRadius = UDim.new(0, 8)
+UICorner.Parent = ToggleBtn
+
+ToggleBtn.MouseButton1Click:Connect(function()
+    getgenv().AutoFarm = not getgenv().AutoFarm
+    if getgenv().AutoFarm then
+        ToggleBtn.Text = "Auto Farm: ON"
+        ToggleBtn.TextColor3 = Color3.fromRGB(255, 0, 128)
+    else
+        ToggleBtn.Text = "Auto Farm: OFF"
+        ToggleBtn.TextColor3 = Color3.fromRGB(0, 255, 255)
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            local bv = char.HumanoidRootPart:FindFirstChild("FarmVelocity")
+            if bv then bv:Destroy() end
+        end
+    end
+end)
+
+local function EquipWeapon()
+    local char = LocalPlayer.Character
+    if not char then return end
+    for _, item in ipairs(LocalPlayer.Backpack:GetChildren()) do
+        if item:IsA("Tool") and (item.ToolTip == getgenv().WeaponType or item.Name == getgenv().WeaponType) then
+            char.Humanoid:EquipTool(item)
+            break
+        end
+    end
+end
+
+local function GetClosestEnemy()
+    local EnemiesFolder = Workspace:FindFirstChild("Enemies")
+    if not EnemiesFolder then return nil end
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
+
+    local closest, minDist = nil, math.huge
+    for _, v in ipairs(EnemiesFolder:GetChildren()) do
+        local hrp = v:FindFirstChild("HumanoidRootPart")
+        local hum = v:FindFirstChild("Humanoid")
+        if hrp and hum and hum.Health > 0 then
+            local dist = (hrp.Position - char.HumanoidRootPart.Position).Magnitude
+            if dist < minDist then
+                minDist = dist
+                closest = v
+            end
+        end
+    end
+    return closest
+end
+
+local currentTween
+local function TweenTo(targetCFrame)
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+    local hrp = char.HumanoidRootPart
+
+    if not hrp:FindFirstChild("FarmVelocity") then
+        local bv = Instance.new("BodyVelocity")
+        bv.Name = "FarmVelocity"
+        bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        bv.Velocity = Vector3.new(0, 0, 0)
+        bv.Parent = hrp
+    end
+
+    local dist = (hrp.Position - targetCFrame.Position).Magnitude
+    local speed = 300
+    if dist < 15 then
+        hrp.CFrame = targetCFrame
+        return
+    end
+
+    local info = TweenInfo.new(dist / speed, Enum.EasingStyle.Linear)
+    if currentTween then currentTween:Cancel() end
+    currentTween = TweenService:Create(hrp, info, {CFrame = targetCFrame})
+    currentTween:Play()
+end
+
+local function BringMobs(targetMob)
+    local EnemiesFolder = Workspace:FindFirstChild("Enemies")
+    if not EnemiesFolder or not targetMob or not targetMob:FindFirstChild("HumanoidRootPart") then return end
+
+    pcall(function()
+        if sethiddenproperty then
+            sethiddenproperty(LocalPlayer, "SimulationRadius", math.huge)
+        end
+    end)
+
+    local targetPos = targetMob.HumanoidRootPart.CFrame
+    for _, v in ipairs(EnemiesFolder:GetChildren()) do
+        if v.Name == targetMob.Name then
+            local hrp = v:FindFirstChild("HumanoidRootPart")
+            local hum = v:FindFirstChild("Humanoid")
+            if hrp and hum and hum.Health > 0 then
+                local dist = (hrp.Position - targetPos.Position).Magnitude
+                if dist <= getgenv().BringDistance then
+                    hrp.CFrame = targetPos
+                    hrp.Size = Vector3.new(getgenv().HitboxSize, getgenv().HitboxSize, getgenv().HitboxSize)
+                    hrp.Transparency = 0.9
+                    hrp.CanCollide = false
+                    if v:FindFirstChild("Head") then
+                        v.Head.CanCollide = false
+                    end
+                    hum.WalkSpeed = 0
+                    hum.JumpPower = 0
+                    if hum:FindFirstChild("Animator") then
+                        hum.Animator:Destroy()
+                    end
+                    hum:ChangeState(11)
+                end
+            end
+        end
+    end
+end
+
+local function FastAttack()
+    local char = LocalPlayer.Character
+    if not char then return end
+
+    pcall(function()
+        VirtualUser:CaptureController()
+        VirtualUser:Button1Down(Vector2.new(1280, 672))
+    end)
+
+    local tool = char:FindFirstChildOfClass("Tool")
+    if tool then
+        tool:Activate()
+    end
+
+    pcall(function()
+        local ReplicatedStorage = game:GetService("ReplicatedStorage")
+        local Modules = ReplicatedStorage:FindFirstChild("Modules")
+        local Net = Modules and Modules:FindFirstChild("Net")
+        if Net then
+            local RegisterAttack = Net:FindFirstChild("RE/RegisterAttack")
+            local RegisterHit = Net:FindFirstChild("RE/RegisterHit")
+            local target = GetClosestEnemy()
+            if RegisterAttack and RegisterHit and target and target:FindFirstChild("HumanoidRootPart") then
+                local hitTargets = {}
+                for _, v in ipairs(Workspace.Enemies:GetChildren()) do
+                    if v ~= target and v:FindFirstChild("HumanoidRootPart") and v:FindFirstChild("Humanoid") and v.Humanoid.Health > 0 then
+                        if (v.HumanoidRootPart.Position - target.HumanoidRootPart.Position).Magnitude <= getgenv().HitboxSize then
+                            table.insert(hitTargets, {v, v.HumanoidRootPart})
+                        end
+                    end
+                end
+                RegisterAttack:FireServer(0)
+                RegisterHit:FireServer(target.HumanoidRootPart, hitTargets)
+            end
+        end
+    end)
+end
+
+RunService.Stepped:Connect(function()
+    if getgenv().AutoFarm and LocalPlayer.Character then
+        for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
+            if part:IsA("BasePart") and part.CanCollide then
+                part.CanCollide = false
+            end
+        end
+    end
+end)
+
+task.spawn(function()
+    while task.wait() do
+        if getgenv().AutoFarm then
+            pcall(function()
+                local target = GetClosestEnemy()
+                if target and target:FindFirstChild("HumanoidRootPart") then
+                    EquipWeapon()
+                    local hoverCFrame = target.HumanoidRootPart.CFrame * CFrame.new(0, getgenv().FarmDistance, 0) * CFrame.Angles(math.rad(-90), 0, 0)
+                    TweenTo(hoverCFrame)
+                    BringMobs(target)
+                    FastAttack()
+                end
+            end)
+        end
+    end
+end)
